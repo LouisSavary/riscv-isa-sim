@@ -16,6 +16,7 @@
 #include "common.h"
 #include "softfloat_types.h"
 #include "specialize.h"
+#include "processor.h"
 #include <cinttypes>
 
 typedef int64_t sreg_t;

@@ -19,9 +19,11 @@
 #include <stdexcept>
 #include <string>
 #include <algorithm>
+#include <predictor.h>
 
 #undef STATE
 #define STATE state
+
 
 processor_t::processor_t(const char* isa, const char* priv, const char* varch,
                          simif_t* sim, uint32_t id, bool halt_on_reset,
@@ -58,6 +60,12 @@ processor_t::processor_t(const char* isa, const char* priv, const char* varch,
   else if (max_xlen == 64)
     set_mmu_capability(IMPL_MMU_SV48);
 
+
+  branch_predictor = new PREDICTOR();
+  pred_id = 0;
+  pre_pred_stats = new uint64_t[NB_PRE_PRED];
+  predictions = new bool[NB_PRE_PRED+1][NB_PRE_PRED+2]; // 1 + NBPREPRED predictions, + 1 bit already failed; NBPREPRED+1 times for history
+
   reset();
 }
 
@@ -71,9 +79,11 @@ processor_t::~processor_t()
       fprintf(stderr, "%0" PRIx64 " %" PRIu64 "\n", it.first, it.second);
   }
 #endif
-
+  delete branch_predictor;
   delete mmu;
   delete disassembler;
+  delete [] predictions;
+  delete [] pre_pred_stats;
 }
 
 static void bad_option_string(const char *option, const char *value,
@@ -659,6 +669,58 @@ void processor_t::set_histogram(bool value)
   }
 #endif
 }
+
+
+
+bool processor_t::get_prediction(uint64_t pc) {
+  
+  predictions[pred_id][0] = branch_predictor->GetPrediction((UINT64)pc, false);
+  predictions[pred_id][NB_PRE_PRED +1] = 0
+  UINT64 next_PC = pc;
+  //TODO pre predictions
+  //TODO copy of predictor
+  for(int i = 1; i <= NB_PRE_PRED; i++) {
+    //TODO compute pc suivant
+    next_PC = fx(next_PC);
+
+    predictions[pred_id][i] = branch_predictor->GetPrediction(next_PC, true);
+  }
+
+  return false;
+}
+
+void processor_t::update_predictor(uint64_t pc, bool taken, OpType op, uint64_t target) {
+  for (int i = 0; i <= NB_PRE_PRED; i++) {
+    
+    uint id = (NB_PRE_PRED + 1 + pred_id - i)%(NB_PRE_PRED+1);
+    if (predictions[id][i] != taken || predictions[id][NB_PRE_PRED +1]) {
+      pre_pred_stats[i]++;
+      predictions[id][NB_PRE_PRED +1] = true;
+    }
+
+  }
+
+  switch(op) {
+    case OPTYPE_CALL_DIRECT_COND:  // does not occure, no call in RISCV
+    case OPTYPE_CALL_INDIRECT_COND:// does not occure, no call in RISCV
+    case OPTYPE_JMP_DIRECT_COND:
+    case OPTYPE_RET_COND:          // does not occure 
+    case OPTYPE_JMP_INDIRECT_COND: // does not occure, never
+      branch_predictor->UpdatePredictor((UINT64)pc, op, taken, predictions[pred_id][0], target);
+      break;
+    default: // unconditional branch, (or conditional ret)
+    branch_predictor->TrackOtherInst((UINT64)pc, op, taken, target);
+  }
+
+  pred_id ++;
+  pred_id %= NB_PRE_PRED;
+}
+
+uint* processor_t::get_pred_stats() {
+  return pre_pred_stats;
+}
+
+
 
 #ifdef RISCV_ENABLE_COMMITLOG
 void processor_t::enable_log_commits()

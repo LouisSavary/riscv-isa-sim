@@ -165,6 +165,23 @@ sim_t::sim_t(const char* isa, const char* priv, const char* varch,
 
 sim_t::~sim_t()
 {
+  //diplays cores pred stats
+
+  //header
+  printf("core\t br_pred ");
+  for (int i = 0; i <= NB_PRE_PRED; i ++) printf("\tpre_pred%2d", i);
+  printf("\n");
+  //cores data
+  for (size_t i = 0; i < procs.size(); i++){
+    uint* stats_tab = procs[i]->get_pred_stats();
+    printf("%4u\t%7u", i, stats_tab[0]);
+    for (int j = 1; j <= NB_PRE_PRED; j++) {
+      printf("\t%9u", stats_tab[j]);
+    }
+    printf("\n");
+  }
+  //-----------------------
+
   for (size_t i = 0; i < procs.size(); i++)
     delete procs[i];
   delete debug_mmu;

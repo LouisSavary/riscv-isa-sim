@@ -7,3 +7,5 @@ STATE.debug_mode = false;
 
 if (STATE.dcsr->step)
   STATE.single_step = STATE.STEP_STEPPING;
+
+p->update_predictor(pc, true, OpType::OPTYPE_RET_UNCOND, npc);

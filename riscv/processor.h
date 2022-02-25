@@ -14,6 +14,9 @@
 #include "debug_rom_defines.h"
 #include "entropy_source.h"
 #include "csrs.h"
+#include <predictor.h>
+
+#define NB_PRE_PRED 0
 
 class processor_t;
 class mmu_t;
@@ -493,7 +496,17 @@ public:
 
   const char* get_symbol(uint64_t addr);
 
+  bool get_prediction(uint64_t pc);
+  // bool get_pre_prediction(uint64_t pc); sera fait dans get_pred
+  void update_predictor(uint64_t pc, bool taken, OpType op, uint64_t target);
+  uint* get_pred_stats();
+
 private:
+  PREDICTOR* branch_predictor;
+  bool** predictions;
+  uint pred_id;
+  uint* pre_pred_stats;
+
   simif_t* sim;
   mmu_t* mmu; // main memory is always accessed via the mmu
   std::unordered_map<std::string, extension_t*> custom_extensions;
