@@ -19,14 +19,16 @@
 #include <stdexcept>
 #include <string>
 #include <algorithm>
+// #include <predictor.h>
 
 #undef STATE
 #define STATE state
 
+
 processor_t::processor_t(const char* isa, const char* priv, const char* varch,
                          simif_t* sim, uint32_t id, bool halt_on_reset,
                          FILE* log_file, std::ostream& sout_)
-  : isa_parser_t(isa), debug(false), halt_request(HR_NONE), sim(sim), id(id), xlen(0),
+  : isa_parser_t(isa), debug(false), halt_request(HR_NONE), cg(), sim(sim), id(id), xlen(0),
   histogram_enabled(false), log_commits_enabled(false),
   log_file(log_file), sout_(sout_.rdbuf()), halt_on_reset(halt_on_reset),
   impl_table(256, false), last_pc(1), executions(1)
@@ -58,6 +60,12 @@ processor_t::processor_t(const char* isa, const char* priv, const char* varch,
   else if (max_xlen == 64)
     set_mmu_capability(IMPL_MMU_SV48);
 
+
+  // branch_predictor = new PREDICTOR();
+  // pred_id = 0;
+  // pre_pred_stats = new uint64_t[NB_PRE_PRED];
+  // predictions = new bool[NB_PRE_PRED+1][NB_PRE_PRED+2]; // 1 + NBPREPRED predictions, + 1 bit already failed; NBPREPRED+1 times for history
+
   reset();
 }
 
@@ -71,9 +79,12 @@ processor_t::~processor_t()
       fprintf(stderr, "%0" PRIx64 " %" PRIu64 "\n", it.first, it.second);
   }
 #endif
-
+  // cg.dump();
+  // delete branch_predictor;
   delete mmu;
   delete disassembler;
+  // delete [] predictions;
+  // delete [] pre_pred_stats;
 }
 
 static void bad_option_string(const char *option, const char *value,
@@ -338,11 +349,6 @@ isa_parser_t::isa_parser_t(const char* str)
       extension_table[EXT_SVPBMT] = true;
     } else if (ext_str == "svinval") {
       extension_table[EXT_SVINVAL] = true;
-    } else if (ext_str == "zicbom") {
-      extension_table[EXT_ZICBOM] = true;
-    } else if (ext_str == "zicboz") {
-       extension_table[EXT_ZICBOZ] = true;
-    } else if (ext_str == "zicbop") {
     } else if (ext_str[0] == 'x') {
       max_isa |= 1L << ('x' - 'a');
       extension_table[toupper('x')] = true;
@@ -574,15 +580,6 @@ void state_t::reset(processor_t* const proc, reg_t max_isa)
   csrmap[CSR_MIMPID] = std::make_shared<const_csr_t>(proc, CSR_MIMPID, 0);
   csrmap[CSR_MVENDORID] = std::make_shared<const_csr_t>(proc, CSR_MVENDORID, 0);
   csrmap[CSR_MHARTID] = std::make_shared<const_csr_t>(proc, CSR_MHARTID, proc->get_id());
-  const reg_t menvcfg_mask = (proc->extension_enabled(EXT_ZICBOM) ? MENVCFG_CBCFE | MENVCFG_CBIE: 0) |
-                             (proc->extension_enabled(EXT_ZICBOZ) ? MENVCFG_CBZE: 0);
-  csrmap[CSR_MENVCFG] = menvcfg = std::make_shared<masked_csr_t>(proc, CSR_MENVCFG, menvcfg_mask, 0);
-  const reg_t senvcfg_mask = (proc->extension_enabled(EXT_ZICBOM) ? SENVCFG_CBCFE | SENVCFG_CBIE: 0) |
-                             (proc->extension_enabled(EXT_ZICBOZ) ? SENVCFG_CBZE: 0);
-  csrmap[CSR_SENVCFG] = senvcfg = std::make_shared<masked_csr_t>(proc, CSR_SENVCFG, senvcfg_mask, 0);
-  const reg_t henvcfg_mask = (proc->extension_enabled(EXT_ZICBOM) ? HENVCFG_CBCFE | HENVCFG_CBIE: 0) |
-                             (proc->extension_enabled(EXT_ZICBOZ) ? HENVCFG_CBZE: 0);
-  csrmap[CSR_HENVCFG] = henvcfg = std::make_shared<masked_csr_t>(proc, CSR_HENVCFG, henvcfg_mask, 0);
 
   serialized = false;
 
@@ -673,6 +670,67 @@ void processor_t::set_histogram(bool value)
   }
 #endif
 }
+
+// INTERACTIONS WITH PREDICTOR ////////////////////////////////////////////////////////////////////
+
+bool processor_t::get_prediction(uint64_t pc) {
+  
+  // predictions[pred_id][0] = branch_predictor->GetPrediction((UINT64)pc);
+  // predictions[pred_id][NB_PRE_PRED +1] = 0
+  
+  // UINT64 next_PC = pc;
+  // //TODO copy of predictor
+  // PREDICTOR* pred_bis = new PREDICTOR(branch_predictor);
+  // //TODO pre predictions
+  // for(int i = 1; i <= NB_PRE_PRED; i++) {
+  //   //TODO compute pc suivant
+  //   next_PC = fx(next_PC);
+
+  //   predictions[pred_id][i] = branch_predictor->GetPrediction(next_PC);
+  //   branch_predictor->UpdatePredictor(next_PC, predictions[pred_id][i], predictions[pred_id][i], last_br_target)
+  // }
+  // delete pred_bis;
+  return false;
+}
+
+void processor_t::update_predictor(uint64_t pc, bool taken, OpType op, uint64_t target, uint32_t opcode = 0) {
+  // for (int i = 0; i <= NB_PRE_PRED; i++) {
+    
+  //   uint id = (NB_PRE_PRED + 1 + pred_id - i)%(NB_PRE_PRED+1);
+  //   if (predictions[id][i] != taken || predictions[id][NB_PRE_PRED +1]) {
+  //     pre_pred_stats[i]++;
+  //     predictions[id][NB_PRE_PRED +1] = true;
+  //   }
+
+  // }
+
+  // switch(op) {
+  //   case OPTYPE_CALL_DIRECT_COND:  // does not occure, no call in RISCV
+  //   case OPTYPE_CALL_INDIRECT_COND:// does not occure, no call in RISCV
+  //   case OPTYPE_JMP_DIRECT_COND:
+  //   case OPTYPE_RET_COND:          // does not occure 
+  //   case OPTYPE_JMP_INDIRECT_COND: // does not occure, never
+  //     branch_predictor->UpdatePredictor((UINT64)pc, taken, predictions[pred_id][0], target);
+  //     break;
+  //   default: // unconditional branch, (or conditional ret)
+  //   branch_predictor->TrackOtherInst((UINT64)pc, op, taken, target);
+  // }
+
+  // pred_id ++;
+  // pred_id %= NB_PRE_PRED;
+  
+  cg.branch(pc, target, op, taken, opcode);
+  
+}
+
+
+// END INTERACTIONS WITH PREDICTOR ////////////////////////////////////////////////////////////////
+
+// uint* processor_t::get_pred_stats() {
+//   return pre_pred_stats;
+// }
+
+
 
 #ifdef RISCV_ENABLE_COMMITLOG
 void processor_t::enable_log_commits()

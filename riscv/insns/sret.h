@@ -24,3 +24,5 @@ if (!STATE.v) {
 
   STATE.mstatus->write(set_field(STATE.mstatus->read(), MSTATUS_MPRV, 0));
 }
+
+p->update_predictor(pc, true, OpType::OPTYPE_RET_UNCOND, next_pc,insn.bits());

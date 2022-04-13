@@ -12,3 +12,5 @@ s = set_field(s, MSTATUS_MPV, 0);
 p->set_csr(CSR_MSTATUS, s);
 p->set_privilege(prev_prv);
 p->set_virt(prev_virt);
+
+p->update_predictor(pc, true, OpType::OPTYPE_RET_UNCOND, STATE.pc,insn.bits());

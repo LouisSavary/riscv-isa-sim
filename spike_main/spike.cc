@@ -475,13 +475,16 @@ int main(int argc, char** argv)
       s.get_core(i)->register_extension(e());
     s.get_core(i)->get_mmu()->set_cache_blocksz(blocksz);
   }
-
   s.set_debug(debug);
   s.configure_log(log, log_commits);
   s.set_histogram(histogram);
 
   auto return_code = s.run();
 
+  for (size_t i = 0; i < nprocs; i++)
+  {
+    s.get_core(i)->cg.dump();
+  }
   for (auto& mem : mems)
     delete mem.second;
 
