@@ -372,11 +372,13 @@ public:
       nodes(),
       edges(),
       edge_sequence() {
+    //just need to make a 0 node
     branch(0, 0, OPTYPE_JMP_DIRECT_UNCOND, true, 0);
+    edges.erase(0);
+    id_edge = 0;
   }
   
   void dump(){
-
     FILE* f = stderr;//fopen("bt9_dump", "w");
     // if (f==nullptr) return;
 
@@ -390,15 +392,15 @@ public:
 
     auto it = edges.begin();
     while (it != edges.end()) {
-      nb_nbr_instr += it->second.size;
+      nb_nbr_instr += it->second.size * it->second.taken_cnt;
 
       it++;
     }
 
     auto it2 = nodes.begin();
     while (it2 != nodes.end()) {
-      nb_nbr_instr += it2->second.taken_cnt;
-      nb_nbr_instr += it2->second.not_taken_cnt;
+      nb_br_instr += it2->second.taken_cnt;
+      nb_br_instr += it2->second.not_taken_cnt;
 
       it2++;
     }
@@ -420,37 +422,44 @@ public:
     fprintf(f,"BT9_NODES\n#NODE    id      virtual_address    physical_address          opcode  size\n");
 
 
-    auto it_node = nodes.begin();
-    while (it_node != nodes.end()) {
+    fprintf(f,"NODE      0   0x0000000000000000                    -                0    0\n");
+
+    for (unsigned int i = 1; i < id_node-1; i ++) {
+
+      auto it_node = nodes.begin();
+      while (it_node != nodes.end() && it_node->second.id != i) it_node++;
+      if (it_node == nodes.end()) break;
+
       node_t n = it_node->second;
-      if (n.id == id_node-1) {
-        fprintf(f,"NODE %6u   0xffffffffffffffff                    -                0    0\n", id_node-1);
-      } else if (n.id == 0) {
-        fprintf(f,"NODE %6u   0x0000000000000000                    -                0    0\n", id_node-1);
-      } else {
-        const char* type = "";
-        switch (n.type) {
-        case OPTYPE_JMP_DIRECT_COND: type="JMP+DIR+CND"; break;
-        case OPTYPE_JMP_DIRECT_UNCOND: type="JMP+DIR+UCD"; break;
-        case OPTYPE_JMP_INDIRECT_COND: type="JMP+IND+CND"; break;
-        case OPTYPE_JMP_INDIRECT_UNCOND: type="JMP+IND+UCD"; break;
-        case OPTYPE_RET_UNCOND: type="RET+IND+UCD"; break;
-        default: type="ERROR";
-        }
-        fprintf(f,"NODE %6u   0x%016lx                -       0x%08x   4  class:  %12s  behavior: DYN+DIR  taken_cnt:  %6u  not_taken_cnt:   %6u  tgt_cnt:   %u\n", 
-            n.id, n.pc, n.opcode, type, n.taken_cnt, n.not_taken_cnt, n.target_count);
+      
+      const char* type = "";
+      switch (n.type) {
+      case OPTYPE_JMP_DIRECT_COND: type="JMP+DIR+CND"; break;
+      case OPTYPE_JMP_DIRECT_UNCOND: type="JMP+DIR+UCD"; break;
+      case OPTYPE_JMP_INDIRECT_COND: type="JMP+IND+CND"; break;
+      case OPTYPE_JMP_INDIRECT_UNCOND: type="JMP+IND+UCD"; break;
+      case OPTYPE_RET_UNCOND: type="RET+IND+UCD"; break;
+      case OPTYPE_CALL_INDIRECT_UNCOND: type="CALL+IND+UCD"; break;
+      default: type="ERROR";
       }
-      it_node++;
+      fprintf(f,"NODE %6u   0x%016lx                -       0x%08x   4  class:  %13s  behavior: DYN+DIR  taken_cnt:  %6u  not_taken_cnt:   %6u  tgt_cnt:   %u\n", 
+          n.id, n.pc, n.opcode, type, n.taken_cnt, n.not_taken_cnt, n.target_count);
     }
+    fprintf(f,"NODE %6u   0xffffffffffffffff                    -                0    0\n", id_node-1);
+
 
     fprintf(f,"BT9_EDGES\n#EDGE    id  src_id   dest_id  taken      br_virt_target       br_phy_target      inst_cnt \n");
-    auto it_edge = edges.begin();
-    while (it_edge != edges.end()) {
-      edge_t e = it_edge->second;
-      fprintf(f,"EDGE  %6u  %6u  %6u       %s  0x%016lx             -        %10u    traverse_cnt:  %7lu\n", 
-           e.id, nodes[e.pc_src].id, nodes[e.pc_dst].id, e.taken?"T":"N",e.target, e.size, e.taken_cnt);
 
-      it_edge++;
+    for (unsigned int i = 0; i < id_edge; i ++) {
+
+      auto it_edge = edges.begin();
+      while (it_edge != edges.end() && it_edge->second.id != i) it_edge++;
+      if (it_edge == edges.end()) break;
+      edge_t e = it_edge->second;
+      unsigned int id_src = it_edge->first >>32;
+      unsigned int id_dst = (uint32_t)it_edge->first;
+      fprintf(f,"EDGE  %6u  %6u  %6u       %s  0x%016lx             -        %10u    traverse_cnt:  %7lu\n", 
+            e.id, id_src, id_dst, e.taken?"T":"N",e.target, e.size, e.taken_cnt);
     }
 
     fprintf(f,"BT9_EDGE_SEQUENCE\n");
@@ -464,6 +473,9 @@ public:
 
   void branch(uint64_t src, uint64_t dst, OpType op, bool taken, uint32_t opcode) {
     // printf("branch %16lx %16lx\n", src, dst);
+    // if (in_ecall) return;
+    if (src >> 63 || dst >> 63) return;
+    
     if (nodes.find(src) != nodes.end()) {
     //    if exists: increments
       nodes[src].taken_cnt += taken;
@@ -474,7 +486,7 @@ public:
       nodes[src].id = id_node++;
       nodes[src].pc = src;
       nodes[src].type = op;
-      nodes[src].opcode = opcode;
+      nodes[src].opcode = opcode; //==0?instr_tmp:opcode;
       nodes[src].taken_cnt = taken;
       nodes[src].not_taken_cnt = !taken;
       nodes[src].target_count = 0;
@@ -494,7 +506,8 @@ public:
     //    else: create it
       // printf("0x%016lx\n", key);
       current_edge.taken_cnt = 1;
-      current_edge.size = abs((long long signed)current_edge.pc_dst-(long long signed)current_edge.target)>>5;
+      current_edge.size = (current_edge.pc_dst-current_edge.target)>>2;
+      
 
 
       edges[key] = current_edge;
@@ -511,10 +524,19 @@ public:
     current_edge.pc_src = src;
     current_edge.target = dst;
     current_edge.taken = taken;
-    
   }
 
+  // void set_instr_tmp(uint32_t instr_bits) {
+  //   instr_tmp=instr_bits;
+  // }
+  void enter_ecall(bool entering) {
+    in_ecall = entering;
+  }
+  bool is_in_ecall() {
+    return in_ecall ;
+  }
 protected:
+  // uint32_t instr_tmp;
   std::unordered_map<uint64_t, node_t> nodes;
   // std::vector<node_t> order_nodes;
   std::unordered_map<uint64_t, edge_t> edges;
@@ -522,6 +544,7 @@ protected:
   edge_t current_edge;
   uint32_t id_node=0;
   uint32_t id_edge=0;
+  bool in_ecall = false;
 };
 
 // this class represents one processor in a RISC-V machine.

@@ -718,8 +718,8 @@ void processor_t::update_predictor(uint64_t pc, bool taken, OpType op, uint64_t 
 
   // pred_id ++;
   // pred_id %= NB_PRE_PRED;
-  
-  cg.branch(pc, target, op, taken, opcode);
+  if (state.prv == PRV_U)
+    cg.branch(pc, target, op, taken, opcode);
   
 }
 
@@ -1042,6 +1042,8 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
     state.mstatus->write(s);
     set_privilege(PRV_M);
   }
+  // update_predictor(epc, true, OpType::OPTYPE_CALL_INDIRECT_UNCOND, state.pc, 0);
+
 }
 
 void processor_t::disasm(insn_t insn)
